@@ -10,12 +10,8 @@ variables:
   PACKAGE_GROUP_DEFAULT: "pje2/pje2-clientes"
 
   GIT_DEPTH: 2
-  HTTP_PROXY: "10.203.4.14:3128"
-  HTTPS_PROXY: "10.203.4.14:3128"
 
 before_script:
-  - export HTTP_PROXY=${HTTP_PROXY}
-  - export HTTPS_PROXY=${HTTPS_PROXY}
   - export REGISTRY_URL=${REGISTRY_URL:-"${REGISTRY_URL_DEFAULT}"}
   - export PACKAGE_GROUP=${PACKAGE_GROUP:-"${PACKAGE_GROUP_DEFAULT}"}
 
@@ -27,8 +23,6 @@ stages:
 build:
   stage: build
   before_script:
-    - 'echo "proxy: ${HTTP_PROXY}"'
-    - 'npm config set proxy http://${HTTP_PROXY}'
     - npm install
     - npm audit fix
   script:

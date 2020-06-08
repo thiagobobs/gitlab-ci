@@ -1,0 +1,92 @@
+image: node:14.3.0-alpine3.11
+
+cache:
+  key: "PJE2WEB"
+  paths:
+    - node_modules/
+
+variables:
+  REGISTRY_URL_DEFAULT: "registry.cnj.jus.br"
+  PACKAGE_GROUP_DEFAULT: "pje2/pje2-clientes"
+
+  GIT_DEPTH: 2
+  HTTP_PROXY: "10.203.4.14:3128"
+  HTTPS_PROXY: "10.203.4.14:3128"
+
+before_script:
+  - export HTTP_PROXY=${HTTP_PROXY}
+  - export HTTPS_PROXY=${HTTPS_PROXY}
+  - export REGISTRY_URL=${REGISTRY_URL:-"${REGISTRY_URL_DEFAULT}"}
+  - export PACKAGE_GROUP=${PACKAGE_GROUP:-"${PACKAGE_GROUP_DEFAULT}"}
+
+stages:
+  - build
+  - publish
+  - deploy
+
+build:
+  stage: build
+  before_script:
+    - 'echo "proxy: ${HTTP_PROXY}"'
+    - 'npm config set proxy http://${HTTP_PROXY}'
+    - npm install
+    - npm audit fix
+  script:
+    - node_modules/.bin/ng build --prod
+  artifacts:
+    name: "pje2-web-$CI_COMMIT_REF_NAME"
+    paths:
+      - dist/
+
+registry:
+  image: docker:dind
+  stage: publish
+  script: 
+    - docker login -u ${REGISTRY_USER} -p ${REGISTRY_PASS} ${REGISTRY_URL}
+    - docker image build --no-cache --pull --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --tag=${REGISTRY_URL}/${PACKAGE_GROUP}/${PACKAGE_NAME}:$CI_COMMIT_REF_NAME .
+    - docker image push ${REGISTRY_URL}/${PACKAGE_GROUP}/${PACKAGE_NAME}:$CI_COMMIT_REF_NAME
+  only:
+    - tags
+    - master
+    - develop
+    - /^release-.*$/
+  except:
+    - /^.*-RC/ # ignora as tags das Release Candidates
+
+registry-latest:
+  image: docker:dind
+  stage: publish
+  script: 
+    - docker login -u ${REGISTRY_USER} -p ${REGISTRY_PASS} ${REGISTRY_URL}
+    - docker image build --no-cache --pull --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --tag=${REGISTRY_URL}/${PACKAGE_GROUP}/${PACKAGE_NAME}:latest .
+    - docker image push ${REGISTRY_URL}/${PACKAGE_GROUP}/${PACKAGE_NAME}:latest
+  only:
+    - tags
+  except:
+    - /^.*-RC/ # ignora as tags das Release Candidates
+
+registry-snapshot:
+  image: docker:dind
+  stage: publish
+  script: 
+    - docker login -u ${REGISTRY_USER} -p ${REGISTRY_PASS} ${REGISTRY_URL}
+    - docker image build --no-cache --pull --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --tag=${REGISTRY_URL}/${PACKAGE_GROUP}/${PACKAGE_NAME}:snapshot .
+    - docker image push ${REGISTRY_URL}/${PACKAGE_GROUP}/${PACKAGE_NAME}:snapshot
+  only:
+    - develop
+
+deploy-stage:
+  stage: deploy
+  image: pstauffer/curl
+  before_script:
+    - export now="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+  variables:
+    RANCHER_URL: "${RANCHER_STG_URL}"
+    RANCHER_PROJECTID: "${RANCHER_STG_REPOSITORIO_PROJECTID}"
+    RANCHER_SERVICEID: "${RANCHER_STG_REPOSITORIO_SERVICEID}"
+    RANCHER_AUTHTOKEN: "${RANCHER_STG_ACCESS_KEY}:${RANCHER_STG_SECRET_KEY}"
+  script:
+    - 'echo "Forcando o redeploy do workload no Rancher:"'
+    - curl -H "Authorization:Bearer ${RANCHER_AUTHTOKEN}" -H 'Content-type:application/json' -X PUT "${RANCHER_URL}/project/${RANCHER_PROJECTID}/workloads/deployment:${RANCHER_SERVICEID}"  --data-binary '{"annotations":{"cattle.io/timestamp":"'"$now"'"  }}' --compressed 2> /dev/null 1> /dev/null
+  only:
+    - develop

@@ -24,7 +24,6 @@ build:
   stage: build
   before_script:
     - npm install
-    - npm audit fix
   script:
     - node_modules/.bin/ng build --prod
   artifacts:

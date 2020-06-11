@@ -1,4 +1,4 @@
-image: node:14.3.0-alpine3.11
+image: node:12.18.0-alpine3.11
 
 cache:
   key: "PJE2WEB"
